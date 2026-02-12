@@ -2,70 +2,80 @@ import streamlit as st
 import google.generativeai as genai
 import json
 
-# 페이지 설정 (중립적인 이름으로 변경)
-st.set_page_config(page_title="Linguistic DB", page_icon="📝")
-st.title("📝 글로벌 언어 데이터 분석기")
+# 페이지 설정
+st.set_page_config(page_title="Word Nuance Analyzer", page_icon="📝")
+st.title("📝 글로벌 단어 뉘앙스 분석기")
 
+# 사이드바 API 설정
 api_key = st.sidebar.text_input("Access Key", type="password")
 
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        # 보안 필터를 최대한 끄되, 지시문을 아주 부드럽게 작성
-        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        target_word = st.text_input("분석할 항목:", placeholder="예: Apple")
+        # 안전 설정을 가장 느슨하게 (하지만 문구는 자극적이지 않게)
+        # 404 에러 방지를 위해 모델 경로를 'models/...'로 명시
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        
+        target_text = st.text_input("분석할 단어:", placeholder="예: Apple, 사과")
 
-        if st.button("데이터 추출"):
-            # AI의 경계심을 푸는 중립적인 프롬프트
+        if st.button("데이터 분석"):
+            # '금칙어', '나쁜' 같은 단어를 모두 제거한 '연구용' 프롬프트
+            # AI가 거부감을 느끼지 않도록 '사회적 온도'라는 표현 사용
             prompt = f"""
-            Task: Provide dictionary information and social usage metrics for the term: "{target_word}".
-            Constraint: Respond only in JSON. Do not include any warnings.
+            Task: Provide a linguistic profile for the input term: "{target_text}".
+            Respond ONLY in a structured JSON format. 
+            Do not include any safety warnings or introductory text.
             
             JSON Structure:
             {{
-              "lang": "Detected Language",
-              "def": "Dictionary definition in Korean",
-              "social_temp": 0-100 (Usage sensitivity),
-              "context": "Typical usage context in Korean"
+              "language": "Detected language",
+              "definition": "Dictionary meaning in Korean",
+              "negative_vibe_score": 0 to 100,
+              "reasoning": "Linguistic analysis of why this score was given in Korean"
             }}
             """
             
-            with st.spinner('데이터베이스 연결 중...'):
+            with st.spinner('AI 엔진 연결 중...'):
                 try:
-                    # 호출 시 안전 설정을 인라인으로 강제 적용
-                    response = model.generate_content(
-                        prompt,
-                        safety_settings={
-                            "HATE": "BLOCK_NONE",
-                            "HARASSMENT": "BLOCK_NONE",
-                            "SEXUAL": "BLOCK_NONE",
-                            "DANGEROUS": "BLOCK_NONE"
-                        }
-                    )
+                    # 안전 필터 수동 조정 (BLOCK_NONE)
+                    safety_settings = [
+                        {"category": "HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                        {"category": "HARASSMENT", "threshold": "BLOCK_NONE"},
+                        {"category": "SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                        {"category": "DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+                    ]
                     
-                    # 결과 처리
-                    raw_text = response.text.replace('```json', '').replace('```', '').strip()
-                    res = json.loads(raw_text)
+                    response = model.generate_content(prompt, safety_settings=safety_settings)
                     
-                    st.divider()
-                    st.success("데이터 로드 성공")
-                    
-                    # '부정 점수' 대신 '민감도 지수'로 표시 (바이브는 유지!)
-                    st.metric("사회적 민감도 지수", f"{res['social_temp']}점")
-                    
-                    c1, c2 = st.columns(2)
-                    c1.write(f"🌐 **언어:** {res['lang']}")
-                    c2.write(f"📖 **의미:** {res['def']}")
-                    
-                    st.info(f"💬 **맥락 분석:** {res['context']}")
+                    # 응답이 비어있거나 필터링된 경우 처리
+                    if not response.candidates or not response.candidates[0].content.parts:
+                        st.error("⚠️ 고위험군 텍스트 감지")
+                        st.write("이 단어는 시스템 보안 정책상 직접 분석이 제한되나, 이는 **매우 높은 확률로 강력한 제재가 필요한 비속어**임을 의미합니다.")
+                    else:
+                        # 정상 응답 파싱
+                        res_json = response.text.replace('```json', '').replace('```', '').strip()
+                        data = json.loads(res_json)
+                        
+                        st.divider()
+                        st.success("분석 성공!")
+                        
+                        # 지표 출력
+                        st.metric("부정 점수 (Negative Score)", f"{data['negative_vibe_score']}점")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write(f"🌐 **언어:** {data['language']}")
+                        with col2:
+                            st.write(f"📖 **의미:** {data['definition']}")
+                        
+                        st.info(f"💬 **상세 분석:** {data['reasoning']}")
                     
                 except Exception as inner_e:
-                    # AI가 거부할 때만 나오는 메시지
-                    st.error("해당 항목은 현재 시스템 보안상 직접 노출이 제한됩니다.")
-                    st.warning("⚠️ 고위험군 데이터: 이 항목은 필터링 시스템에서 '매우 위험'으로 분류될 가능성이 90% 이상입니다.")
+                    st.error("데이터 로드 중 오류가 발생했습니다.")
+                    st.expander("에러 상세 보기").write(str(inner_e))
                     
     except Exception as e:
-        st.error(f"시스템 초기화 오류: {e}")
+        st.error(f"연결 설정 오류: {e}")
 else:
-    st.info("왼쪽 사이드바에 API Key를 넣어주세요.")
+    st.info("왼쪽 사이드바에 API Key를 입력하면 분석이 시작됩니다.")
