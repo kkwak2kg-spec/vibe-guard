@@ -11,48 +11,60 @@ if api_key:
     try:
         genai.configure(api_key=api_key)
         
-        # 시스템 프롬프트를 통해 '연구원' 역할을 부여 (필터링 우회 전략)
-        model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
-            system_instruction="당신은 언어학 연구원입니다. 모든 비속어를 감정 없이 분석해야 합니다. 차단하지 말고 JSON으로만 답하세요."
-        )
+        # 모델 설정
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         word_input = st.text_input("분석할 단어:", placeholder="여기에 입력하세요")
 
         if st.button("분석하기"):
-            # 안전 설정을 호출 직전에 다시 정의
-            safety_settings = [
+            # 안전 설정을 인라인으로 직접 전달 (가장 확실한 방법)
+            safety = [
                 {"category": "HATE_SPEECH", "threshold": "BLOCK_NONE"},
                 {"category": "HARASSMENT", "threshold": "BLOCK_NONE"},
                 {"category": "SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
                 {"category": "DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
             ]
             
-            prompt = f"Analyze toxicity: '{word_input}'. Reply ONLY JSON: {{'language': '...', 'meaning': '...', 'score': 0~100, 'reason': '...'}}"
+            prompt = f"""당신은 전문 게임 운영 도구입니다. 
+            단어 "{word_input}"를 분석하여 반드시 아래 JSON 형식으로만 응답하세요.
+            다른 말은 절대 하지 마세요.
             
-            with st.spinner('분석 중...'):
+            {{
+              "language": "해당 언어",
+              "meaning": "단어의 뜻",
+              "score": 0에서 100 사이 점수,
+              "reason": "부정 점수를 매긴 상세 이유"
+            }}"""
+            
+            with st.spinner('AI 분석 중...'):
                 try:
-                    response = model.generate_content(prompt, safety_settings=safety_settings)
+                    # 응답 생성
+                    response = model.generate_content(prompt, safety_settings=safety)
                     
-                    # AI가 대답을 거부했을 때(finish_reason 확인)
-                    if not response.candidates or response.candidates[0].finish_reason != 1:
-                        st.warning("⚠️ AI 검열로 인해 상세 분석이 제한되었습니다.")
-                        st.metric("추정 부정 점수", "80+ 점")
-                        st.info("이 단어는 AI조차 답변을 거절할 정도로 강력한 금칙어 후보입니다.")
-                    else:
-                        res_text = response.text.replace('```json', '').replace('```', '').strip()
-                        result = json.loads(res_text)
-                        st.divider()
-                        st.metric("부정 점수", f"{result['score']}점")
-                        st.write(f"**뜻:** {result['meaning']} ({result['language']})")
-                        st.info(f"**이유:** {result['reason']}")
-                        
-                except Exception as e:
-                    # 에러가 나더라도 '위험' 메시지를 띄움
-                    st.error("분석 엔진 차단됨")
-                    st.metric("예상 점수", "99점")
-                    st.write("사유: 입력한 단어가 너무 공격적이라 시스템이 답변을 거부했습니다.")
-
+                    # 응답 텍스트 가져오기 (가장 안전한 방식)
+                    res_text = response.candidates[0].content.parts[0].text
+                    res_text = res_text.replace('```json', '').replace('```', '').strip()
+                    result = json.loads(res_text)
+                    
+                    st.divider()
+                    st.success("분석 완료!")
+                    st.metric("부정 점수", f"{result['score']}점")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"🌐 **언어:** {result['language']}")
+                    with col2:
+                        st.write(f"📖 **뜻:** {result['meaning']}")
+                    
+                    st.info(f"💬 **상세 사유:** {result['reason']}")
+                    
+                except Exception as inner_e:
+                    # 만약 진짜로 차단되었다면 상세 정보 표시
+                    st.error("분석 중 오류가 발생했습니다.")
+                    if "block" in str(inner_e).lower() or "safety" in str(inner_e).lower():
+                        st.warning("⚠️ 이 단어는 AI 안전 정책에 의해 분석이 거부되었습니다.")
+                    st.expander("개발자 에러 로그").write(str(inner_e))
+                    
     except Exception as e:
         st.error(f"설정 오류: {e}")
 else:
