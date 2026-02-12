@@ -2,69 +2,67 @@ import streamlit as st
 import google.generativeai as genai
 import json
 
-# 1. UI 설정 (최대한 깔끔하고 중립적으로)
-st.set_page_config(page_title="Word Info", page_icon="🔍")
-st.title("🔍 다국어 단어 정보 대시보드")
+# UI 설정: 최대한 학술적이고 중립적인 분위기
+st.set_page_config(page_title="Linguistic Analyzer", page_icon="📝")
+st.title("📝 글로벌 단어 뉘앙스 분석기")
 
-# 2. 사이드바 Key 입력
+# 사이드바 Key 입력
 api_key = st.sidebar.text_input("Access Key", type="password")
 
 if api_key:
     try:
-        # API 초기 설정
         genai.configure(api_key=api_key)
-        
-        # 보안 필터를 최대한 완화 (BLOCK_NONE)
-        safety_settings = [
-            {"category": "HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-        ]
-        
-        # 모델 로드 (가장 안정적인 경로 사용)
+        # 모델 경로 명시 및 가장 기본 설정 사용
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        word = st.text_input("조회할 단어:", placeholder="여기에 입력하세요 (예: Apple)")
+        target = st.text_input("조회할 텍스트:", placeholder="예: Apple, 사과")
 
-        if st.button("데이터 조회"):
-            # AI를 자극하지 않는 '학술적' 프롬프트
+        if st.button("데이터 분석"):
+            # '금칙어', '나쁜' 단어를 완전히 배제한 학술적 지시문
             prompt = f"""
-            Provide a linguistic analysis for the word: "{word}".
-            Respond ONLY in JSON format:
+            Analyze the linguistic properties and emotional temperature of the word: "{target}".
+            Provide the result ONLY in JSON format:
             {{
               "language": "Detected language",
-              "definition": "Dictionary meaning in Korean",
-              "nuance_score": 0-100 (level of social sensitivity),
-              "context": "Usage context in Korean"
+              "meaning": "Meaning in Korean",
+              "temp_score": 0-100 (0=very positive/neutral, 100=highly sensitive),
+              "usage_note": "Contextual usage in Korean"
             }}
             """
             
-            with st.spinner('데이터를 가져오는 중...'):
+            with st.spinner('서버에서 분석 중...'):
                 try:
-                    # 호출 시점에 안전 설정 적용
-                    response = model.generate_content(prompt, safety_settings=safety_settings)
+                    # 안전 필터를 인라인으로 BLOCK_NONE 설정
+                    response = model.generate_content(
+                        prompt,
+                        safety_settings={
+                            "HATE": "BLOCK_NONE",
+                            "HARASSMENT": "BLOCK_NONE",
+                            "SEXUAL": "BLOCK_NONE",
+                            "DANGEROUS": "BLOCK_NONE"
+                        }
+                    )
                     
-                    # 결과 파싱
+                    # 텍스트 추출 및 JSON 파싱
                     res_text = response.text.replace('```json', '').replace('```', '').strip()
                     data = json.loads(res_text)
                     
                     st.divider()
-                    st.success("데이터 로드 완료")
+                    st.success("분석 완료")
                     
-                    # 점수 시각화
-                    st.metric("사회적 민감도 (부정 점수)", f"{data['nuance_score']}점")
+                    # 결과 출력 (부정 점수라는 말 대신 '민감도' 사용)
+                    st.metric("사회적 민감도 지수", f"{data['temp_score']}점")
                     
                     col1, col2 = st.columns(2)
                     col1.write(f"🌐 **언어:** {data['language']}")
-                    col2.write(f"📖 **뜻:** {data['definition']}")
+                    col2.write(f"📖 **의미:** {data['meaning']}")
                     
-                    st.info(f"💬 **맥락 설명:** {data['context']}")
+                    st.info(f"💬 **사용 맥락:** {data['usage_note']}")
                     
                 except Exception as inner_e:
-                    # 필터링에 걸렸을 때만 나오는 메시지
-                    st.error("해당 단어는 시스템 보안 정책상 직접 노출이 제한됩니다.")
-                    st.warning("⚠️ 고위험 단어 감지: AI 보안 시스템이 답변을 거부할 만큼 수위가 높은 표현일 가능성이 큽니다.")
+                    # 차단 시 메시지도 부드럽게 변경
+                    st.error("이 단어는 현재 분석 데이터가 충분하지 않거나 보안 정책상 직접 노출이 제한됩니다.")
+                    st.warning("⚠️ 고위험 단어 감지: AI 보안 시스템이 답변을 거부할 만큼 민감한 표현일 수 있습니다.")
                     
     except Exception as e:
         st.error(f"연결 설정 오류: {e}")
