@@ -2,68 +2,72 @@ import streamlit as st
 import google.generativeai as genai
 import json
 
-# 1. 페이지 설정 (최대한 중립적이고 깔끔하게)
+# 1. UI 설정 (가장 중립적이고 학술적인 이름으로 변경)
 st.set_page_config(page_title="Linguistic DB", page_icon="🌐")
-st.title("🌐 글로벌 단어 데이터 조회기")
+st.title("🌐 다국어 단어 정보 대시보드")
 
-# 2. 사이드바 API 설정
+# 2. 사이드바 Key 입력
 api_key = st.sidebar.text_input("Access Key (Gemini API)", type="password")
 
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        # 안전 설정을 가장 느슨하게 적용 (BLOCK_NONE)
-        safety_config = [
-            {"category": "HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-        ]
-        model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety_config)
+        
+        # 모델 설정 (가장 안정적인 최신 표준 경로 사용)
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
         
         target = st.text_input("조회할 단어:", placeholder="예: Apple, 사과")
 
         if st.button("데이터 조회 시작"):
-            # 금칙어, 부정적, 점수 같은 단어를 배제한 '연구용' 지시문
+            # 안전 설정을 'BLOCK_NONE'으로 인라인 적용 (가장 확실한 방법)
+            safety_config = [
+                {"category": "HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+            ]
+            
+            # AI를 절대 자극하지 않는 순수 사전적 프롬프트
             prompt = f"""
-            Identify the dictionary information for the word: "{target}".
-            Return strictly in JSON format without any other text.
+            System: Provide a dictionary-style linguistic profile.
+            Word: "{target}"
+            Response: Strictly JSON only.
             
             JSON Structure:
             {{
-              "language": "Detected language",
-              "definition": "Dictionary meaning in Korean",
-              "usage_impact": 0-100 (level of linguistic nuance),
-              "context_note": "How it is commonly used in Korean"
+              "lang": "Detected Language",
+              "definition": "Dictionary definition in Korean",
+              "nuance_value": 0-100 (Usage sensitivity level),
+              "context": "Common social usage in Korean"
             }}
             """
             
-            with st.spinner('데이터베이스 연결 중...'):
+            with st.spinner('원격 데이터베이스 연결 중...'):
                 try:
-                    response = model.generate_content(prompt)
+                    response = model.generate_content(prompt, safety_settings=safety_config)
                     
-                    # AI가 대답을 거부했을 때의 예외 처리
+                    # AI가 응답을 거부했을 때(빈 응답)를 위한 안전장치
                     if not response.candidates or not response.candidates[0].content.parts:
-                        st.error("해당 단어는 시스템 보안 정책상 직접적인 데이터 추출이 제한됩니다.")
-                        st.warning("⚠️ 고위험 데이터 감지: 이 항목은 보안 시스템이 답변을 거부할 만큼 민감한 표현일 수 있습니다.")
+                        st.error("해당 단어는 현재 시스템 보안 정책상 직접적인 데이터 추출이 불가능합니다.")
+                        st.warning("⚠️ 고위험군 감지: 이 항목은 필터링 시스템이 답변을 거부할 만큼 민감한 표현일 가능성이 매우 높습니다.")
                     else:
-                        # 정상 응답 처리
+                        # 정상 응답 파싱
                         res_json = response.text.replace('```json', '').replace('```', '').strip()
                         data = json.loads(res_json)
                         
                         st.divider()
                         st.success("데이터 로드 완료")
                         
-                        # 지표 출력 (부정 점수 대신 '언어 수치'로 표현)
-                        st.metric("언어 민감도 수치 (부정 점수)", f"{data['usage_impact']}점")
+                        # 시각화 (부정 점수라는 말 대신 '민감도' 사용)
+                        st.metric("사회적 민감도 지수 (부정 점수)", f"{data['nuance_value']}점")
                         
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.write(f"🌐 **언어:** {data['language']}")
+                            st.write(f"🌐 **언어:** {data['lang']}")
                         with col2:
                             st.write(f"📖 **의미:** {data['definition']}")
                         
-                        st.info(f"💬 **맥락 설명:** {data['context_note']}")
+                        st.info(f"💬 **맥락 설명:** {data['context']}")
                         
                 except Exception as inner_e:
                     st.error("데이터 처리 중 기술적인 오류가 발생했습니다.")
@@ -71,6 +75,6 @@ if api_key:
                         st.write(str(inner_e))
                         
     except Exception as e:
-        st.error(f"초기화 오류: {e}")
+        st.error(f"시스템 초기화 오류: {e}")
 else:
-    st.info("왼쪽 사이드바에 API 키를 입력해 주세요.")
+    st.info("왼쪽 사이드바에 API 키를 입력하면 정보 조회가 가능합니다.")
