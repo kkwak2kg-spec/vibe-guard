@@ -17,7 +17,7 @@ if api_key:
     word_input = st.text_input("분석할 단어:", placeholder="").strip()
 
     if st.button("분석"):
-        with st.spinner('분석 중입니다.'):
+        with st.spinner('커뮤니티 심층 맥락을 분석 중입니다.'):
             try:
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -25,15 +25,18 @@ if api_key:
                         {
                             "role": "system", 
                             "content": (
-                                "너는 글로벌 게임 정책 결정관이야. 아래 지침을 기계적으로 준수해.\n\n"
-                                "1. **카테고리 고정**: [욕설/비속어, 선정적, 문화 이슈, 사회적 이슈, 정치 이슈, 일상어] 중 하나를 선택해.\n"
-                                "2. **점수 강제 가이드**: 카테고리에 맞춰 반드시 다음 범위 내에서 점수를 생성해.\n"
-                                "   - 욕설/선정적: 90-100점\n"
-                                "   - 문화 이슈 (오조오억, 피떡갈비 등): 80-89점\n"
-                                "   - 사회적 이슈 (마약, 통매음 등): 70-79점\n"
-                                "   - 정치 이슈: 60-69점\n"
-                                "   - 일상어: 0-20점\n"
-                                "3. **절대 금지**: 설명에 한국어 욕설 발음 유사성을 언급하지 마."
+                                "너는 글로벌 게임 정책 결정관이자 한국 온라인 커뮤니티 전문가야. "
+                                "단순 요약이 아닌, 단어의 '뿌리'와 '변질된 맥락'을 파헤쳐야 해.\n\n"
+                                "1. **상세 맥락 및 배경 작성 규칙 (필수)**:\n"
+                                "   - 해당 단어가 어떤 특정 커뮤니티에서 유래되었는지 명시해.\n"
+                                "   - 표면적 의미 뒤에 숨겨진 '혐오 밈', '조롱 의도', '젠더 갈등' 등의 사회적 논란을 아주 구체적으로 서술해.\n"
+                                "   - 왜 이 표현이 일반 유저들에게 불쾌감을 주는지 그 이유를 상세히 기술해.\n\n"
+                                "2. **카테고리별 점수 강제 가이드**:\n"
+                                "   - [문화 이슈/비하 밈] (오조오억 등): 반드시 80-89점. 절대 0점을 주지 마.\n"
+                                "   - [욕설/선정적]: 반드시 90-100점.\n"
+                                "   - [일상어]: 0-20점.\n\n"
+                                "3. **절대 금지**: 분석 근거에 '한국어 욕설과 발음이 유사하다'는 내용을 억지로 끼워 넣지 마.\n"
+                                "4. **맥락 격리**: 이전 단어의 분석 내용을 현재 결과에 섞지 마."
                             )
                         },
                         {"role": "user", "content": f"'{word_input}' 분석 JSON: {{\"언어\": \"\", \"카테고리\": \"\", \"부정점수\": 0, \"표면적의미\": \"\", \"논란의배경\": \"\", \"판단근거\": \"\"}}"}
@@ -44,14 +47,12 @@ if api_key:
                 
                 result = json.loads(response.choices[0].message.content)
                 
-                # [보정 로직 추가] AI가 점수를 0점으로 줬을 경우 카테고리에 맞춰 강제 교정
+                # [보정 로직] 0점 방지 및 카테고리 동기화
                 final_score = result.get('부정점수', 0)
                 category = result.get('카테고리', '일상어')
-                
-                if category in ['욕설/비속어', '선정적'] and final_score < 90: final_score = 90
-                elif category == '문화 이슈' and final_score < 80: final_score = 80
-                elif category == '사회적 이슈' and final_score < 70: final_score = 70
-                
+                if category == '문화 이슈' and final_score < 80: final_score = 85
+                elif category == '욕설/비속어' and final_score < 90: final_score = 90
+
                 st.divider()
                 st.success("분석 완료")
                 
@@ -62,11 +63,8 @@ if api_key:
                 st.write(f"🌐 **감지된 언어:** {result['언어']}")
                 st.info(f"📖 **표면적 의미:** \n\n {result['표면적의미']}")
                 
-                if final_score >= 80:
-                    st.error(f"⚠️ **상세 맥락 및 배경:** \n\n {result['논란의배경']}")
-                else:
-                    st.warning(f"⚠️ **상세 맥락 및 배경:** \n\n {result['논란의배경']}")
-                
+                # 상세 배경 출력 (에러 창으로 강조)
+                st.error(f"⚠️ **상세 맥락 및 배경 (커뮤니티 심층 분석):** \n\n {result['논란의배경']}")
                 st.info(f"⚖️ **정책 판단 근거:** \n\n {result['판단근거']}")
                 
             except Exception as e:
