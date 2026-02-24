@@ -13,10 +13,8 @@ if api_key:
         word_input = st.text_input("분석할 단어:", placeholder="예: 애자, 억까, 卍")
 
         if st.button("정책 및 문화 맥락 분석"):
-            with st.spinner('일관된 기준으로 분석 중입니다...'):
+            with st.spinner('일관된 기준으로 한국어 분석 중입니다...'):
                 try:
-                    # 1. temperature를 0으로 설정하여 결정론적 답변 유도
-                    # 2. 점수 산정 가이드를 구체화하여 수치 통일성 확보
                     response = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -24,38 +22,47 @@ if api_key:
                                 "role": "system", 
                                 "content": (
                                     "너는 글로벌 게임 정책 전문가야. 일관성 있는 분석을 위해 다음 기준을 엄격히 지켜줘.\n"
-                                    "1. 점수 산정: 비하 의도가 1%라도 있다면 최소 50점 이상 부여하되, 중의성이 높으면 50-70점, 명백한 혐오는 80점 이상으로 고정해.\n"
-                                    "2. '애자'와 같은 단어는 한국 내에서 장애인 비하라는 강력한 역사적 맥락이 있으므로, 이름으로 쓰일 가능성이 있더라도 60점 미만으로 내리지 마.\n"
-                                    "3. 모든 분석은 객관적 사실과 어원에 근거하여 동일한 답변을 내놓도록 해."
+                                    "1. 모든 필드의 답변 내용은 반드시 '한국어'로만 작성해.\n"
+                                    "2. 점수 산정: 비하 의도가 있다면 최소 50점 이상 부여하되, 중의성이 높으면 50-70점, 명백한 혐오는 80점 이상으로 고정해.\n"
+                                    "3. '애자'와 같은 단어는 한국 내에서 장애인 비하라는 강력한 역사적 맥락이 있으므로 60점 미만으로 내리지 마.\n"
+                                    "4. temperature=0 설정을 통해 항상 동일한 논조와 점수를 유지해."
                                 )
                             },
                             {
                                 "role": "user", 
-                                "content": f"단어 '{word_input}'를 분석해서 JSON으로 답해줘. 구조: {{\"language\": \"\", \"meaning\": \"\", \"score\": 0~100, \"cultural_context\": \"\", \"policy_decision\": \"\", \"final_opinion\": \"\"}}"
+                                "content": f"단어 '{word_input}'를 분석해서 아래의 한글 키를 가진 JSON으로 답해줘.\n"
+                                           f"구조: {{\"언어\": \"\", \"의미\": \"\", \"부정점수\": 0, \"문화적배경\": \"\", \"최종판단\": \"\", \"운영가이드라인\": \"\"}}"
                             }
                         ],
                         response_format={ "type": "json_object" },
-                        temperature=0 # 창의성을 배제하고 일관성을 극대화
+                        temperature=0 
                     )
                     
+                    # 결과를 파싱할 때도 한글 키를 사용합니다.
                     result = json.loads(response.choices[0].message.content)
                     
                     st.divider()
-                    st.success("분석 완료 (일관성 모드 적용)")
+                    st.success("분석 완료 (한국어 고정 모드)")
                     
                     col_score, col_decision = st.columns(2)
                     with col_score:
-                        st.metric("부정/민감도 점수", f"{result['score']}점")
+                        # 한글 키 '부정점수' 사용
+                        st.metric("부정/민감도 점수", f"{result['부정점수']}점")
                     with col_decision:
-                        st.write(f"📍 **최종 판단:** {result['policy_decision']}")
+                        st.write(f"📍 **최종 판단:** {result['최종판단']}")
                     
-                    st.write(f"🌐 **언어:** {result['language']} / 📖 **의미:** {result['meaning']}")
-                    st.info(f"📋 **가이드라인:** {result['final_opinion']}")
+                    st.write(f"🌐 **언어:** {result['언어']} / 📖 **의미:** {result['의미']}")
+                    
+                    with st.expander("🌍 문화적/역사적 배경 상세 정보"):
+                        st.write(result['문화적배경'])
+                        
+                    st.info(f"📋 **정책 가이드라인:** \n\n {result['운영가이드라인']}")
                     
                 except Exception as inner_e:
-                    st.error("오류 발생")
+                    st.error("데이터 처리 중 오류가 발생했습니다.")
+                    st.expander("에러 로그 보기").write(str(inner_e))
                     
     except Exception as e:
         st.error(f"설정 오류: {e}")
 else:
-    st.warning("API 키를 입력해 주세요.")
+    st.info("왼쪽 사이드바에 OpenAI API 키를 입력해 주세요.")
