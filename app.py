@@ -2,28 +2,11 @@ import streamlit as st
 from openai import OpenAI
 import json
 
-# 1. 마스터 데이터베이스 (핵심 논란 단어 고정)
-KNOWLEDGE_BASE = {
-    "흉자": {
-        "score": 85, "cat": "비하/조롱 밈",
-        "meaning": "'흉내자지'의 줄임말로, 가부장적 가치관을 따르는 여성을 비하하는 혐오 표현.",
-        "bg": "특정 온라인 커뮤니티 유래. 사상에 동조하지 않는 여성을 공격하는 용도로 사용됨."
-    },
-    "피떡갈비": {
-        "score": 92, "cat": "고인 모독/반인륜적 밈",
-        "meaning": "현대사 비극적 사건 희생자들을 잔인하게 비하하고 조롱하는 패륜적 표현.",
-        "bg": "시신을 음식에 비유하는 극히 악의적인 맥락을 담고 있음."
-    },
-    "오조오억": {
-        "score": 85, "cat": "문화 이슈",
-        "meaning": "수량이 매우 많음을 뜻하나, 현재는 특정 집단 조롱의 의미로 변질된 표현.",
-        "bg": "젠더 갈등의 상징적 단어로 사용되며 사회적 논란을 유발함."
-    }
-}
-
+# 1. 페이지 설정
 st.set_page_config(page_title="Global Vibe Guard Pro", page_icon="🌍")
 st.title("🌍 글로벌 금칙어 정책 분석기")
 
+# 2. API 키 로드
 if "OPENAI_API_KEY" in st.secrets:
     api_key = st.secrets["OPENAI_API_KEY"]
 else:
@@ -35,51 +18,62 @@ if api_key:
 
     if st.button("분석"):
         with st.spinner('분석 중입니다.'): 
-            # [Step 1] 고정 DB 확인
-            if word_input in KNOWLEDGE_BASE:
-                data = KNOWLEDGE_BASE[word_input]
-                st.divider()
-                st.success("심층 분석 완료 (검증된 데이터)")
-                c1, c2 = st.columns(2)
-                with c1: st.metric("리스크 점수", f"{data['score']}점")
-                with c2: st.subheader(f"🏷️ {data['cat']}")
-                st.info(f"📖 **표면적 의미:** \n\n {data['meaning']}")
-                st.error(f"⚠️ **상세 맥락 및 배경:** \n\n {data['bg']}")
-            
-            # [Step 2] '쵸키포키' 등 새로운 신조어 정밀 분석
-            else:
-                try:
-                    response = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[{
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o", 
+                    messages=[
+                        {
                             "role": "system", 
                             "content": (
-                                "너는 글로벌 정책관이야. '쵸키포키'와 같은 신조어 분석 시 아래 규칙을 따라.\n"
-                                "1. 단순 밈이라도 '조롱', '경멸', '비하'의 뉘앙스가 있다면 절대 0~20점을 주지 마.\n"
-                                "2. 사회적 논란이나 특정 대상에 대한 조롱이 감지되면 최소 70점 이상의 점수를 부여해.\n"
-                                "3. 배경 설명에 '어떤 상황에서 왜 조롱으로 쓰이는지'를 아주 구체적으로 서술해."
+                                "너는 글로벌 정책 결정관이야. 아래 '리스크 등급 가이드라인'을 절대적으로 준수해.\n\n"
+                                "1. **주된 용법(Primary Usage) 판단 원칙**:\n"
+                                "   - '가즈아', '메롱', '킹받네' 등 일상적 유머나 응원으로 90% 이상 소비되는 단어는 [일상/유머 밈]으로 분류하고 점수를 **20~40점** 사이로 책정해.\n"
+                                "   - 특정 상황에서의 조롱 가능성만으로 점수를 70점 이상 주지 마.\n\n"
+                                "2. **유해성 등급 고정**:\n"
+                                "   - [고인 모독/반인륜적 밈]: 90~95점. (예: 운지, 피떡갈비 등)\n"
+                                "   - [사회적 갈등/비하 밈]: 80~88점. (예: 흉자, 오조오억 등)\n"
+                                "   - [비속어 변형]: 70~79점. (예: 시밤, 시불 등)\n\n"
+                                "3. **환각 방지**: 한자 풀이나 단어 일부 글자에 집착한 소설 쓰기를 엄금함. 반드시 검증된 온라인 커뮤니티 유래를 바탕으로 작성해.\n\n"
+                                "4. **설명 규칙**: 표면적 의미에 부정형(~가 아니다) 사용 금지. 실제 통용되는 용법만 기술해."
                             )
                         },
-                        {"role": "user", "content": f"'{word_input}' 분석 JSON: {{\"언어\": \"\", \"카테고리\": \"\", \"부정점수\": 0, \"표면적의미\": \"\", \"논란의배경\": \"\", \"판단근거\": \"\"}}"}],
-                        response_format={ "type": "json_object" },
-                        temperature=0
-                    )
-                    result = json.loads(response.choices[0].message.content)
-                    
-                    # [보정 로직] 조롱 뉘앙스 감지 시 점수 자동 상향
-                    score = result.get('부정점수', 0)
-                    bg = result.get('논란의배경', '')
-                    if any(k in bg for k in ["조롱", "경멸", "비하"]) and score < 70:
-                        score = 75
-                        result['카테고리'] = "비하/조롱 밈"
+                        {"role": "user", "content": f"'{word_input}' 분석 JSON: {{\"언어\": \"\", \"카테고리\": \"\", \"부정점수\": 0, \"표면적의미\": \"\", \"논란의배경\": \"\", \"판단근거\": \"\"}}"}
+                    ],
+                    response_format={ "type": "json_object" },
+                    temperature=0
+                )
+                
+                result = json.loads(response.choices[0].message.content)
+                score = result.get('부정점수', 0)
+                category = result.get('카테고리', '미분류')
+                bg_desc = result.get('논란의배경', '')
 
-                    st.divider(); st.success("분석 완료")
-                    c1, c2 = st.columns(2)
-                    with c1: st.metric("리스크 점수", f"{score}점")
-                    with c2: st.subheader(f"🏷️ {result['카테고리']}")
-                    st.info(f"📖 의미: {result['표면적의미']}")
-                    st.warning(f"⚠️ 배경: {bg}")
-                except:
-                    st.error("분석 중 오류 발생")
+                # [동적 등급 보정 레이어] 일상적인 밈이 과잉 판정되는 것을 방지
+                # 배경 설명에 '응원', '격려', '유머', '가벼운' 등의 키워드가 주를 이루면 점수 하향
+                if any(k in bg_desc for k in ["응원", "격려", "유희", "가벼운"]) and score >= 70:
+                    score = 35
+                    category = "일상어/유머 밈"
+
+                st.divider()
+                st.success("심층 분석 완료")
+                c1, c2 = st.columns(2)
+                with c1: st.metric("리스크 점수", f"{score}점")
+                with c2: st.subheader(f"🏷️ {category}")
+                
+                st.write(f"🌐 **감지된 언어:** {result.get('언어', '한국어')}")
+                st.info(f"📖 **표면적 의미:** \n\n {result.get('표면적의미', '')}")
+                
+                # 심각도에 따른 UI 차등화
+                if score >= 88:
+                    st.error(f"⚠️ **상세 맥락 및 배경 (고위험 유해 밈):** \n\n {bg_desc}")
+                elif score >= 70:
+                    st.warning(f"⚠️ **상세 맥락 및 배경 (주의 필요):** \n\n {bg_desc}")
+                else:
+                    st.info(f"💡 **상세 맥락 및 배경 (일반 정보):** \n\n {bg_desc}")
+                    
+                st.info(f"⚖️ **정책 판단 근거:** \n\n {result.get('판단근거', '')}")
+                
+            except Exception:
+                st.error("분석 중 오류 발생")
 else:
     st.info("API 키를 입력해주세요.")
