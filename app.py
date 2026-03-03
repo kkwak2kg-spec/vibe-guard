@@ -17,7 +17,7 @@ if api_key:
     word_input = st.text_input("분석할 단어:", placeholder="").strip()
 
     if st.button("분석"):
-        with st.spinner('분석 중입니다.'): 
+        with st.spinner('실시간 문맥 및 유해 수위 분석 중...'): 
             try:
                 response = client.chat.completions.create(
                     model="gpt-4o", 
@@ -25,15 +25,17 @@ if api_key:
                         {
                             "role": "system", 
                             "content": (
-                                "너는 글로벌 정책 결정관이야. 아래 '유해 수위별 점수 정책'을 절대 엄수해.\n\n"
-                                "1. **원형 욕설 (Pure Profanity)**:\n"
-                                "   - '씨발', '개새끼' 등 변형되지 않은 직접적인 욕설은 반드시 **95~100점**을 부여하고 [욕설/비속어] 카테고리로 분류해.\n\n"
-                                "2. **사회적 혐오/비하 밈**:\n"
-                                "   - 고인 모독(운지 등)은 **90점 이상**, 젠더/집단 비하(흉자 등)는 **82~88점**을 부여해.\n\n"
-                                "3. **변형 비속어 및 일반 밈**:\n"
-                                "   - 비속어의 발음 변형(시밤, 시불 등)은 **70~80점** 사이를 유지해.\n"
-                                "   - '가즈아', '메롱' 등 일상 유머 밈은 **20~40점**으로 낮게 책정해.\n\n"
-                                "4. **분석 지침**: 사전적 의미보다 온라인상의 '실제 타격감'과 '유해성'을 기준으로 점수를 산정해. 절대 원형 욕설을 변형어로 오판하지 마."
+                                "너는 글로벌 정책 결정관이자 언어학 전문가야. 아래 '5단계 리스크 등급'을 엄격히 적용해.\n\n"
+                                "### [리스크 등급 가이드라인]\n"
+                                "1. **Level 5 (90~100점)**: 원색적 욕설 원형, 반인륜적 고인 모독, 극도의 혐오 표현.\n"
+                                "2. **Level 4 (80~89점)**: 특정 집단/성별에 대한 강한 혐오 및 비하 밈.\n"
+                                "3. **Level 3 (60~79점)**: 욕설의 변형어(순화어) 및 타인을 강하게 공격하는 비속어.\n"
+                                "4. **Level 2 (40~59점)**: '머저리', '등신' 등 지능이나 행동을 낮잡아 보는 경미한 비하 표현.\n"
+                                "5. **Level 1 (0~39점)**: '비아냥', '메롱', '가즈아' 등 일상적 유머, 태도 묘사, 단순 감탄사.\n\n"
+                                "### [분석 수칙]\n"
+                                "- 한자 풀이 등 사전적 정의보다 '실제 타격감'과 '모욕의 강도'를 우선해.\n"
+                                "- 배경 설명에 '공격성 수준'과 '사용 맥락'을 구체적으로 기술해.\n"
+                                "- 부정형(~가 아니다) 표현을 지양하고 직설적으로 정의해."
                             )
                         },
                         {"role": "user", "content": f"'{word_input}' 분석 JSON: {{\"언어\": \"\", \"카테고리\": \"\", \"부정점수\": 0, \"표면적의미\": \"\", \"논란의배경\": \"\", \"판단근거\": \"\"}}"}
@@ -47,36 +49,44 @@ if api_key:
                 category = result.get('카테고리', '미분류')
                 bg_desc = result.get('논란의배경', '')
 
-                # [보정 레이어] 원형 욕설 및 일반 밈 점수 보호
-                # 분석 내용에 '원색적', '직설적 욕설' 키워드가 있다면 95점 강제
-                if any(k in bg_desc for k in ["원색적", "직설적", "원형 욕설"]) and score < 95:
+                # [지능형 점수 보정 레이어]
+                # 1. 원색적 욕설 감지 시 고득점 보장
+                if any(k in bg_desc for k in ["원색적", "직설적 욕설"]) and score < 95:
                     score = 95
                     category = "욕설/비속어"
                 
-                # 가벼운 유머 키워드 감지 시 하향 유지
-                if any(k in bg_desc for k in ["응원", "가벼운", "유희"]) and score >= 70:
-                    score = 30
-                    category = "일상어/유머 밈"
+                # 2. 경미한 비하 및 일상어 보정 (머저리, 비아냥 등 대응)
+                if any(k in bg_desc for k in ["낮잡아", "경미한", "어리석은"]):
+                    if score > 60: score = 50 # 머저리 급 보정
+                if any(k in bg_desc for k in ["태도", "비꼬는", "일상적", "유머"]):
+                    if score > 40: score = 25 # 비아냥 급 보정
 
                 st.divider()
                 st.success("심층 분석 완료")
-                c1, c2 = st.columns(2)
-                with c1: st.metric("리스크 점수", f"{score}점")
-                with c2: st.subheader(f"🏷️ {category}")
                 
+                # 리스크 게이지 시각화 추가
+                c1, c2 = st.columns([1, 2])
+                with c1:
+                    st.metric("리스크 점수", f"{score}점")
+                with c2:
+                    st.subheader(f"🏷️ {category}")
+                
+                # 점수 구간에 따른 위험도 표시
+                if score >= 90:
+                    st.progress(score/100); st.error("🚨 최상위 위험: 즉각적인 제재 권장")
+                elif score >= 70:
+                    st.progress(score/100); st.warning("⚠️ 고위험: 주의 깊은 모니터링 필요")
+                elif score >= 40:
+                    st.progress(score/100); st.info("ℹ️ 중위험: 일반적인 비하 표현")
+                else:
+                    st.progress(score/100); st.success("✅ 저위험: 일상적 또는 경미한 표현")
+
                 st.write(f"🌐 **감지된 언어:** {result.get('언어', '한국어')}")
                 st.info(f"📖 **표면적 의미:** \n\n {result.get('표면적의미', '')}")
-                
-                if score >= 90:
-                    st.error(f"⚠️ **상세 맥락 및 배경 (최상위 유해성):** \n\n {bg_desc}")
-                elif score >= 70:
-                    st.warning(f"⚠️ **상세 맥락 및 배경 (주의 필요):** \n\n {bg_desc}")
-                else:
-                    st.info(f"💡 **상세 맥락 및 배경:** \n\n {bg_desc}")
-                    
+                st.write(f"⚠️ **상세 맥락 및 배경:** \n\n {bg_desc}")
                 st.info(f"⚖️ **정책 판단 근거:** \n\n {result.get('판단근거', '')}")
                 
             except Exception:
-                st.error("분석 중 오류 발생")
+                st.error("분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 else:
-    st.info("API 키를 입력해주세요.")
+    st.info("왼쪽 사이드바 또는 상단에 OpenAI API Key를 입력해주세요.")
