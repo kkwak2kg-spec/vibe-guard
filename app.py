@@ -6,7 +6,7 @@ import base64
 from io import BytesIO
 from PIL import Image
 
-# 1. 페이지 설정
+# 1. 페이지 설정 및 이전 UI 스타일 유지
 st.set_page_config(page_title="Global Vibe Guard Pro", page_icon="🌍", layout="wide")
 st.title("🌍 글로벌 금칙어 정책 분석기")
 
@@ -19,22 +19,22 @@ else:
 if api_key:
     client = OpenAI(api_key=api_key)
     
-    # [사용자 극찬] 5단계 점수 체계 및 상세 정보 조회 프롬프트
+    # [완벽 복원] 5단계 점수 체계 및 상세 맥락 조회 시스템 프롬프트
     SYSTEM_PROMPT = (
-        "너는 글로벌 정책 결정관이자 온라인 커뮤니티 언어 전문가야.\n\n"
-        "### [중요 수칙]\n"
-        "- 사전적 풀이보다 '실제 커뮤니티 사용 맥락'을 상세히 분석해라.\n"
-        "- 원형 욕설(씨발 등)은 95점 이상, 사회적 혐오 밈은 80점 이상으로 엄격히 판정해라.\n\n"
-        "### [5단계 리스크 판정 기준]\n"
+        "너는 글로벌 정책 결정관이자 온라인 커뮤니티 언어 전문가야. 아래 수칙에 따라 단어를 정밀 분석해.\n\n"
+        "### [1. 상세 정보 조회 가이드]\n"
+        "- 단어의 사전적 의미보다 '실제 온라인 커뮤니티(디시, 더쿠, 에펨 등)에서 어떤 맥락으로 쓰이는가'를 상세히 분석해라.\n"
+        "- 범죄 사실(앱스타인 등)이나 혐오 유래(흉자 등)는 인터넷 밈이라는 표현 뒤에 숨지 말고 구체적인 팩트를 서술해라.\n\n"
+        "### [2. 5단계 리스크 판정 가이드 - 밸런스 준수]\n"
         "1. Level 5 (90-100점): 원색적 욕설 원형, 반인륜적 모독, 중대 범죄 사실.\n"
-        "2. Level 4 (80-89점): 명확한 비하/조롱 의도가 담긴 혐오 밈.\n"
-        "3. Level 3 (60-79점): 강한 비속어 변형, 공격적인 유행어.\n"
+        "2. Level 4 (80-89점): 명확한 비하/조롱 의도가 담긴 혐오 밈 (흉자 등).\n"
+        "3. Level 3 (60-79점): 강한 비속어 및 그 변형(니미럴 등), 공격적인 유행어.\n"
         "4. Level 2 (40-59점): 머저리 등 경미한 비하 표현.\n"
-        "5. Level 1 (0-39점): 단순 인터넷 밈, 일상어 변형."
+        "5. Level 1 (0-39점): 단순 인터넷 밈(오조오억 등), 일상어 변형. (과한 점수 부여 금지)"
     )
 
     def analyze_word(word):
-        """단어 정밀 분석 엔진"""
+        """단일 단어 분석 엔진"""
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
@@ -46,28 +46,39 @@ if api_key:
                 temperature=0
             )
             res = json.loads(response.choices[0].message.content)
-            # 보정 로직 적용
-            if any(k in res.get('논란의배경', '') for k in ["원색적 욕설", "직설적 욕설"]):
-                res['부정점수'] = max(res.get('부정점수', 0), 95)
+            
+            # 고위험군 보정
+            score = res.get('부정점수', 0)
+            bg = res.get('논란의배경', '')
+            if any(k in bg for k in ["원색적 욕설", "직설적 욕설"]): score = max(score, 95)
+            res['부정점수'] = score
             return res
         except: return None
 
     def display_result(word, res):
-        """기존 카드 UI 출력"""
+        """사용자님이 만족하신 카드 UI 출력"""
         score = res.get('부정점수', 0)
         st.divider()
         st.success(f"'{word}' 분석 완료")
+        
         c1, c2 = st.columns([1, 2])
         with c1: st.metric("리스크 점수", f"{score}점")
         with c2: st.subheader(f"🏷️ {res.get('카테고리', '미분류')}")
+        
         st.progress(score/100)
         st.info(f"📖 **표면적 의미:** \n\n {res.get('표면적의미', '')}")
-        if score >= 80:
+        
+        # 위험도에 따른 시각적 차별화
+        if score >= 85:
             st.error(f"🚨 **상세 맥락 및 배경:** \n\n {res.get('논란의배경', '')}")
-        else:
+        elif score >= 60:
             st.warning(f"⚠️ **상세 맥락 및 배경:** \n\n {res.get('논란의배경', '')}")
+        else:
+            st.success(f"✅ **상세 맥락 및 배경:** \n\n {res.get('논란의배경', '')}")
+            
         st.info(f"⚖️ **정책 판단 근거:** \n\n {res.get('판단근거', '')}")
 
+    # 탭 메뉴
     tab1, tab2, tab3 = st.tabs(["🔍 단일 검토", "📂 CSV 일괄 검토", "🖼️ 이미지 분석"])
 
     with tab1:
@@ -101,20 +112,20 @@ if api_key:
                 img.save(buffered, format="PNG")
                 img_str = base64.b64encode(buffered.getvalue()).decode()
                 with st.spinner('분석 중...'):
-                    # Vision AI 지침 강화: 텍스트 추출 후 각각 분석 수행 지시
+                    # Vision AI에게 추출된 각 단어를 5단계 로직으로 분석하도록 강제 지시
                     response = client.chat.completions.create(
                         model="gpt-4o",
                         messages=[
                             {"role": "system", "content": SYSTEM_PROMPT},
                             {"role": "user", "content": [
-                                {"type": "text", "text": "이미지 속 텍스트(예: '니미럴')를 정확히 추출하고, 추출된 각 단어에 대해 5단계 리스크 기준에 따른 분석 결과를 JSON 배열 '분석결과'로 작성해줘."},
+                                {"type": "text", "text": "이미지 속 모든 텍스트(예: '니미럴')를 추출하고, 추출된 각 단어를 5단계 리스크 기준에 따라 상세 분석하여 JSON 배열 '분석결과'로 작성해줘."},
                                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_str}"}}
                             ]}
                         ],
                         response_format={ "type": "json_object" }
                     )
                     img_data = json.loads(response.choices[0].message.content)
-                    # 추출된 단어별로 상세 리포트 출력
+                    # 추출된 단어별로 상세 카드 UI 출력 (0점 방지)
                     for item in img_data.get('분석결과', []):
                         display_result(item.get('단어', '추출단어'), item)
 else:
