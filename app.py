@@ -6,7 +6,7 @@ import base64
 from io import BytesIO
 from PIL import Image
 
-# 1. 페이지 설정
+# 1. 페이지 설정 및 이전 UI 스타일 유지
 st.set_page_config(page_title="Global Vibe Guard Pro", page_icon="🌍", layout="wide")
 st.title("🌍 글로벌 금칙어 정책 분석기")
 
@@ -19,13 +19,21 @@ else:
 if api_key:
     client = OpenAI(api_key=api_key)
     
-    # [복원된] 시스템 프롬프트: 구체적 사실 적시 및 맥락 강화
+    # [완벽 복원] 고위험군 리스크 판정 및 구체적 정보 조회 시스템 프롬프트
     SYSTEM_PROMPT = (
-        "너는 글로벌 정책 결정관이자 사회 문제 분석 전문가야. 단어 분석 시 아래 수칙을 지켜.\n\n"
-        "1. **구체적 사실 적시**: '앱스타인'과 같이 실제 인물이나 사건이 배경인 경우, '조롱하는 변형어'라는 추상적 표현 대신 실제 성범죄 사건, 역사적 비극 등 구체적인 팩트를 배경 설명에 포함해라.\n"
-        "2. **리스크 등급**: 단순 밈이 아닌 범죄, 성착취, 패륜 등과 연관된 경우 무조건 Level 5(90~100점)로 분류해라.\n"
-        "3. **표면적 의미**: 단어의 사전적 의미보다 사회적 통념상 인지되는 실제 사건의 본질을 기재해라.\n"
-        "4. **정책 판단 근거**: 이 단어가 왜 금칙어로서 관리되어야 하는지 사회적 파장과 피해자 보호 관점에서 서술해라."
+        "너는 글로벌 정책 결정관이자 사회 문제 분석 전문가야. 아래 수칙을 절대적으로 준수해.\n\n"
+        "### [1. 고위험군 점수 정책 - 절대 엄수]\n"
+        "- **원형 욕설 (씨발 등)**: 변형되지 않은 원색적 욕설은 반드시 **95~100점**을 부여하고 [욕설/비속어]로 분류해라. 70점대는 중대한 오류다.\n"
+        "- **중대 범죄/사건 (앱스타인 등)**: 성범죄, 인명피해, 고인 모독과 관련된 단어는 반드시 **92~95점**을 부여해라. 단순 밈으로 치부하지 마라.\n\n"
+        "### [2. 정보 조회 및 설명 기준]\n"
+        "- **구체적 사실 적시**: 단어 설명 시 '인터넷 밈'이라는 표현 뒤에 숨지 말고, 실제 범죄 사실, 가해자/피해자 관계, 역사적 사건 등 구체적인 정보를 상세히 서술해라.\n"
+        "- **맥락 우선**: 사전적 의미보다 사회적 통념상 인지되는 실제 사건의 본질을 최우선으로 기재해라.\n\n"
+        "### [3. 리스크 5단계 세분화 가이드]\n"
+        "1. Level 5 (90~100점): 직설적 욕설 원형, 중대 범죄 사건, 반인륜적 모독.\n"
+        "2. Level 4 (80~89점): 특정 집단/성별에 대한 강한 혐오 및 비하 밈.\n"
+        "3. Level 3 (60~79점): 욕설의 변형어 및 강한 비속어.\n"
+        "4. Level 2 (40~59점): 경미한 비하 표현 (머저리 등).\n"
+        "5. Level 1 (0~39점): 일상적 유머, 태도 묘사 (비아냥, 가즈아 등)."
     )
 
     def analyze_word(word):
@@ -41,20 +49,28 @@ if api_key:
             )
             res = json.loads(response.choices[0].message.content)
             
-            # 동적 보정: 범죄/성범죄/패륜 키워드 감지 시 리스크 상향
+            # [강력 보정 레이어] 이전 버전의 완벽한 기준 복원
+            score = res.get('부정점수', 0)
             bg = res.get('논란의배경', '')
-            if any(k in bg for k in ["범죄", "성범죄", "성착취", "패륜", "사망"]):
-                res['부정점수'] = max(res.get('부정점수', 0), 92)
-                res['카테고리'] = "고위험 사회적 이슈"
             
+            # 직설적 욕설 복원
+            if any(k in bg for k in ["원색적", "직설적", "원형 욕설"]):
+                score = max(score, 95)
+                res['카테고리'] = "욕설/비속어"
+            
+            # 범죄 및 사회적 중대 이슈 복원
+            if any(k in bg for k in ["범죄", "성범죄", "성착취", "사건", "연루"]):
+                score = max(score, 92)
+                res['카테고리'] = "고위험 사회적 이슈"
+                
+            res['부정점수'] = score
             return res
         except: return None
 
-    # 기존 UI 스타일의 출력 함수
     def display_result(word, res):
         score = res.get('부정점수', 0)
         st.divider()
-        st.success(f"'{word}' 심층 분석 완료")
+        st.success(f"'{word}' 분석 완료")
         
         c1, c2 = st.columns([1, 2])
         with c1: st.metric("리스크 점수", f"{score}점")
@@ -63,19 +79,23 @@ if api_key:
         st.progress(score/100)
         
         st.info(f"📖 **표면적 의미:** \n\n {res.get('표면적의미', '')}")
-        st.error(f"⚠️ **상세 맥락 및 배경 (구체적 사건 중심):** \n\n {res.get('논란의배경', '')}")
+        # 고위험군은 에러(빨간색) UI로 강렬하게 표시
+        if score >= 90:
+            st.error(f"🚨 **상세 맥락 및 배경 (고위험 사실 관계):** \n\n {res.get('논란의배경', '')}")
+        else:
+            st.warning(f"⚠️ **상세 맥락 및 배경:** \n\n {res.get('논란의배경', '')}")
         st.info(f"⚖️ **정책 판단 근거:** \n\n {res.get('판단근거', '')}")
 
+    # 탭 구성 (이전 UI 복원)
     tab1, tab2, tab3 = st.tabs(["🔍 단일 검토", "📂 CSV 일괄 검토", "🖼️ 이미지 분석"])
 
     with tab1:
         word_input = st.text_input("분석할 단어 입력:", key="single_input")
         if st.button("분석 실행", key="single_btn"):
-            with st.spinner('구체적인 사건 배경과 맥락을 추적 중...'):
+            with st.spinner('구체적인 사건 배경과 원형 욕설 수위를 분석 중...'):
                 res = analyze_word(word_input)
                 if res: display_result(word_input, res)
 
-    # ... [Tab 2, Tab 3 로직은 이전과 동일하게 유지] ...
-
+    # ... [Tab 2, Tab 3 로직 유지] ...
 else:
     st.info("API 키를 입력해주세요.")
