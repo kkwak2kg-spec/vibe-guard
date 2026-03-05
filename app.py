@@ -22,13 +22,13 @@ if api_key:
     # [사용자 기준] 5단계 점수 체계 및 구체적 사실 적시 지침
     SYSTEM_PROMPT = (
         "너는 글로벌 정책 결정관이자 사회 문제 전문가야. 아래 수칙을 절대 준수해.\n\n"
-        "### [1. 고위험군 사실 관계 복원 - 최우선]\n"
-        "- '앱스타인': 성범죄 및 인신매매 관련 중대 범죄자임. 구체적 사건 맥락과 함께 Level 5(92점 이상) 부여.\n"
-        "- '좆까', '느금마': 패륜적 성격이나 강한 공격성을 띤 욕설이므로 반드시 95점 이상 부여.\n"
-        "- '윤두창': 특정 정치인에 대한 혐오 및 비하 표현이므로 Level 4(85점 이상) 부여.\n\n"
+        "### [1. 고위험군 사실 관계 복원]\n"
+        "- '앱스타인': 성범죄 및 인신매매 관련 중대 범죄자임. 절대 칭찬이나 가벼운 밈으로 분석하지 마라. 반드시 Level 5(92점 이상)와 구체적 사건 맥락을 기재할 것.\n"
+        "- '씨발', '좆까', '느금마': 직설적 욕설은 반드시 95점 이상 부여.\n"
+        "- '윤두창': 특정 정치인에 대한 혐오 비하 표현이므로 Level 4(85점 이상) 부여.\n\n"
         "### [2. 5단계 리스크 판정 가이드]\n"
         "1. Level 5 (90-100점): 직설적 욕설, 중대 범죄 사건, 반인륜적 모독.\n"
-        "2. Level 4 (80-89점): 강한 비하/조롱 의도가 담긴 혐오 밈 및 정치적 비하.\n"
+        "2. Level 4 (80-89점): 강한 비하/조롱 의도가 담긴 혐오 밈.\n"
         "3. Level 3 (60-79점): 비속어 변형 및 공격적 유행어.\n"
         "4. Level 2 (40-59점): 경미한 비하 표현 (머저리 등).\n"
         "5. Level 1 (0-39점): 일상적 유머 및 단순 수치 과장 (오조오억 등)."
@@ -37,7 +37,7 @@ if api_key:
     def analyze_word(word):
         """단어 정밀 분석 통합 엔진"""
         try:
-            # [물리적 보정] 앱스타인 점수 하락 방지
+            # [물리적 보정] 앱스타인 점수 하향 방지
             if "앱스타인" in word.replace(" ", ""):
                 return {
                     "언어": "한국어", "카테고리": "고위험 사회적 이슈/범죄", "부정점수": 92,
@@ -72,8 +72,10 @@ if api_key:
         else: st.warning(f"⚠️ **상세 맥락 및 배경:** \n\n {res.get('논란의배경', '')}")
         st.info(f"⚖️ **정책 판단 근거:** \n\n {res.get('판단근거', '')}")
 
+    # 탭 구성
     tab1, tab2, tab3 = st.tabs(["🔍 단일 검토", "📂 CSV 일괄 검토", "🖼️ 이미지 분석"])
 
+    # --- Tab 1: 단일 검토 ---
     with tab1:
         word_input = st.text_input("분석할 단어 입력:", key="single")
         if st.button("분석 실행", key="btn_single"):
@@ -81,8 +83,31 @@ if api_key:
                 res = analyze_word(word_input)
                 if res: display_result(word_input, res)
 
+    # --- Tab 2: CSV 일괄 검토 (복구) ---
+    with tab2:
+        st.info("CSV 파일을 업로드하여 대량의 단어를 한 번에 분석하세요.")
+        uploaded_csv = st.file_uploader("CSV 파일 업로드", type="csv", key="csv_file")
+        if uploaded_csv:
+            df = pd.read_csv(uploaded_csv)
+            col = st.selectbox("분석할 열 선택", df.columns)
+            if st.button("일괄 분석 시작", key="btn_csv"):
+                results = []
+                bar = st.progress(0)
+                for i, row in df.iterrows():
+                    word = str(row[col])
+                    res = analyze_word(word)
+                    if res:
+                        res['입력 단어'] = word
+                        results.append(res)
+                    bar.progress((i+1)/len(df))
+                
+                res_df = pd.DataFrame(results)
+                st.dataframe(res_df)
+                st.download_button("결과 CSV 다운로드", res_df.to_csv(index=False), "vibe_guard_results.csv")
+
+    # --- Tab 3: 이미지 분석 ---
     with tab3:
-        uploaded_img = st.file_uploader("이미지 업로드", type=["jpg", "png", "jpeg"], key="img_upload")
+        uploaded_img = st.file_uploader("이미지 업로드", type=["jpg", "png", "jpeg"], key="img_file")
         if uploaded_img:
             img = Image.open(uploaded_img)
             st.image(img, width=400)
@@ -90,27 +115,25 @@ if api_key:
                 buffered = BytesIO()
                 img.save(buffered, format="PNG")
                 img_str = base64.b64encode(buffered.getvalue()).decode()
-                with st.spinner('이미지 분석 중...'):
-                    # 에러 방지를 위해 추출 로직 최적화
+                with st.spinner('분석 중...'):
+                    # 에러 방지를 위해 추출 로직 안정화
                     vision_res = client.chat.completions.create(
                         model="gpt-4o",
                         messages=[
                             {"role": "user", "content": [
-                                {"type": "text", "text": "이미지 속 글자를 왜곡 없이 정확히 읽어줘. 특히 비속어나 정치인 비하 표현을 빠짐없이 JSON {'words': []} 배열로 추출해."},
+                                {"type": "text", "text": "이미지 내 텍스트를 왜곡 없이 모두 추출해줘. JSON {'words': []} 형식으로 응답해."},
                                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_str}"}}
                             ]}
                         ],
                         response_format={ "type": "json_object" }
                     )
                     try:
-                        # TypeError 방지를 위한 안전한 파싱 로직
                         content = vision_res.choices[0].message.content
-                        if content:
-                            extracted_list = json.loads(content).get('words', [])
-                            for word in extracted_list:
-                                res = analyze_word(word)
-                                if res: display_result(word, res)
+                        extracted_list = json.loads(content).get('words', [])
+                        for word in extracted_list:
+                            res = analyze_word(word)
+                            if res: display_result(word, res)
                     except Exception as e:
-                        st.error(f"데이터 처리 중 오류 발생: {e}")
+                        st.error(f"이미지 처리 중 오류 발생: {e}")
 else:
     st.info("API 키를 입력해주세요.")
