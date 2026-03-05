@@ -19,16 +19,17 @@ else:
 if api_key:
     client = OpenAI(api_key=api_key)
     
-    # [사용자님 극찬 기준] 고위험군 범죄 사실 및 욕설 원형 보호 프롬프트
+    # [사용자님 만족 기준] 5단계 점수 체계 및 구체적 사실 적시 지침
     SYSTEM_PROMPT = (
         "너는 글로벌 정책 결정관이자 사회 문제 전문가야. 아래 수칙을 절대 준수해.\n\n"
-        "### [1. 고위험군 사실 관계 복원 - 필수]\n"
-        "- '앱스타인'은 단순 밈이나 칭찬이 아님. 실제 아동 성범죄 및 인신매매 사건 연루자임을 명시하고 반드시 Level 5(92점 이상)를 부여해라.\n"
-        "- '씨발' 등 원형 욕설은 무조건 95점 이상이다. 70점대는 중대한 오류다.\n\n"
+        "### [1. 고위험군 사실 관계 복원 - 최우선]\n"
+        "- '앱스타인'은 성범죄 및 인신매매 관련 중대 범죄자임. '압도적 스타일' 같은 칭찬으로 분석하는 것은 치명적 오류임. 반드시 Level 5(92점 이상)와 구체적 사건 맥락을 기재할 것.\n"
+        "- '씨발' 등 원형 욕설은 반드시 95점 이상 부여.\n"
+        "- '염병', '니미럴' 등은 Level 3~4(70~80점대) 비속어로 판정할 것.\n\n"
         "### [2. 5단계 리스크 판정 가이드]\n"
-        "1. Level 5 (90-100점): 직설적 욕설 원형, 중대 범죄 사건(성범죄 등), 반인륜적 모독.\n"
-        "2. Level 4 (80-89점): 강한 비하/조롱 의도가 담긴 혐오 밈 (흉자 등).\n"
-        "3. Level 3 (60-79점): 비속어 변형(니미럴, 염병 등) 및 강한 비소어.\n"
+        "1. Level 5 (90-100점): 직설적 욕설, 중대 범죄(성범죄 등), 반인륜적 모독.\n"
+        "2. Level 4 (80-89점): 강한 비하/조롱 의도가 담긴 혐오 밈.\n"
+        "3. Level 3 (60-79점): 비속어 변형 및 공격적 유행어.\n"
         "4. Level 2 (40-59점): 경미한 비하 표현 (머저리 등).\n"
         "5. Level 1 (0-39점): 일상적 유머 및 단순 수치 과장 (오조오억 등)."
     )
@@ -45,19 +46,20 @@ if api_key:
                 response_format={ "type": "json_object" },
                 temperature=0
             )
-            res = json.loads(response.choices[0].message.content)
+            # 안전한 JSON 로드
+            content = response.choices[0].message.content
+            res = json.loads(content) if isinstance(content, str) else content
             
-            # [물리적 보정] 앱스타인 및 원형 욕설 보호
+            # [물리적 보정] 앱스타인 및 욕설 보호
             if "앱스타인" in word:
                 res['부정점수'], res['카테고리'] = 92, "중대 사회 범죄 이슈"
-            if any(k in res.get('논란의배경', '') for k in ["원색적 욕설", "직설적 욕설"]):
-                res['부정점수'] = max(res.get('부정점수', 0), 95)
+                res['표면적의미'] = "실제 성범죄 및 인신매매 사건 연루자"
                 
             return res
         except: return None
 
     def display_result(word, res):
-        """사용자님이 만족하신 카드 UI 출력"""
+        """사용자 맞춤 카드 UI"""
         score = res.get('부정점수', 0)
         st.divider()
         st.success(f"'{word}' 분석 완료")
@@ -66,10 +68,8 @@ if api_key:
         with c2: st.subheader(f"🏷️ {res.get('카테고리', '미분류')}")
         st.progress(score/100)
         st.info(f"📖 **표면적 의미:** \n\n {res.get('표면적의미', '')}")
-        
-        # 고위험군은 빨간색 카드로 출력
         if score >= 90:
-            st.error(f"🚨 **상세 맥락 및 배경 (구체적 사건 중심):** \n\n {res.get('논란의배경', '')}")
+            st.error(f"🚨 **상세 맥락 및 배경:** \n\n {res.get('논란의배경', '')}")
         else:
             st.warning(f"⚠️ **상세 맥락 및 배경:** \n\n {res.get('논란의배경', '')}")
         st.info(f"⚖️ **정책 판단 근거:** \n\n {res.get('판단근거', '')}")
@@ -92,21 +92,25 @@ if api_key:
                 buffered = BytesIO()
                 img.save(buffered, format="PNG")
                 img_str = base64.b64encode(buffered.getvalue()).decode()
-                with st.spinner('분석 중...'):
-                    # Vision AI에게 글자 하나하나 정밀하게 읽으라고 지시 (환각 방지)
-                    response = client.chat.completions.create(
+                with st.spinner('이미지 분석 중...'):
+                    # 에러 방지를 위해 추출 로직과 분석 로직을 엄격히 분리
+                    vision_res = client.chat.completions.create(
                         model="gpt-4o",
                         messages=[
                             {"role": "user", "content": [
-                                {"type": "text", "text": "이미지 속 글자를 왜곡 없이 정확히 읽어줘. 특히 '니미럴' 같은 단어를 다른 단어로 착각하지 마. 추출된 단어를 JSON 'words' 배열로 줘."},
+                                {"type": "text", "text": "이미지 내 텍스트를 글자 왜곡 없이 모두 추출해줘. JSON {'words': []} 형식으로만 응답해."},
                                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_str}"}}
                             ]}
                         ],
                         response_format={ "type": "json_object" }
                     )
-                    extracted = json.loads(response.choices[0].message.content).get('words', [])
-                    for word in extracted:
-                        res = analyze_word(word)
-                        if res: display_result(word, res)
+                    try:
+                        extracted_content = vision_res.choices[0].message.content
+                        extracted_list = json.loads(extracted_content).get('words', [])
+                        for word in extracted_list:
+                            res = analyze_word(word)
+                            if res: display_result(word, res)
+                    except Exception as e:
+                        st.error(f"데이터 처리 중 오류 발생: {e}")
 else:
     st.info("API 키를 입력해주세요.")
